@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
   User as FirebaseUser,
   onAuthStateChanged,
@@ -15,7 +15,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
-import { UserProfile, Role, AdminRecord } from '../types';
+import { UserProfile, AdminRecord } from '../types';
 
 const BOOTSTRAP_ADMIN_EMAIL = 'dream27326@gmail.com';
 
@@ -25,6 +25,8 @@ interface AuthContextType {
   isAdmin: boolean;
   loading: boolean;
   adminEmails: string[];
+  authError: string | null;
+  clearAuthError: () => void;
   signInWithGoogle: () => Promise<void>;
   logOut: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -40,8 +42,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [adminEmails, setAdminEmails] = useState<string[]>([BOOTSTRAP_ADMIN_EMAIL]);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  // Listen to admins collection
+  const adminEmailsRef = useRef<string[]>([BOOTSTRAP_ADMIN_EMAIL]);
+
+  // Subscribe to admins collection
   useEffect(() => {
     const unsub = onSnapshot(
       collection(db, 'admins'),
@@ -54,57 +59,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
         setAdminEmails(emails);
+        adminEmailsRef.current = emails;
+
+        // Re-check admin status for current user
+        if (auth.currentUser?.email) {
+          const userEmail = auth.currentUser.email.toLowerCase();
+          const userIsAdmin = userEmail === BOOTSTRAP_ADMIN_EMAIL || emails.includes(userEmail);
+          setIsAdmin(userIsAdmin);
+        }
       },
       (error) => {
-        console.warn('Admins listener error (may be non-admin access):', error);
+        console.warn('Admins listener notice:', error);
       }
     );
     return () => unsub();
   }, []);
 
-  // Listen to Auth State
+  // Listen to Auth State once on mount
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setLoading(true);
       if (user) {
         setCurrentUser(user);
         const userEmail = (user.email || '').toLowerCase();
-        const userIsAdmin = userEmail === BOOTSTRAP_ADMIN_EMAIL || adminEmails.includes(userEmail);
+        const userIsAdmin =
+          userEmail === BOOTSTRAP_ADMIN_EMAIL ||
+          adminEmailsRef.current.includes(userEmail);
         setIsAdmin(userIsAdmin);
 
-        // Fetch or create user profile
+        // Fallback default profile immediately so UI does not flicker or bounce
+        const fallbackProfile: UserProfile = {
+          id: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || 'ผู้ใช้งาน',
+          photoURL: user.photoURL || '',
+          phoneNumber: user.phoneNumber || '',
+          studentOrStaffId: '',
+          department: 'ภาควิชาเทคโนโลยีการศึกษา',
+          role: userIsAdmin ? 'admin' : 'user',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        // Fetch or create user profile in Firestore
         const userDocRef = doc(db, 'users', user.uid);
         try {
           const docSnap = await getDoc(userDocRef);
           if (docSnap.exists()) {
             const data = docSnap.data() as UserProfile;
-            // Update admin role in profile if matched
             if (userIsAdmin && data.role !== 'admin') {
-              await updateDoc(userDocRef, { role: 'admin', updatedAt: new Date().toISOString() });
+              updateDoc(userDocRef, { role: 'admin', updatedAt: new Date().toISOString() }).catch(() => {});
               setProfile({ ...data, role: 'admin' });
             } else {
               setProfile(data);
             }
           } else {
-            // Create initial profile
-            const newProfile: UserProfile = {
-              id: user.uid,
-              email: user.email || '',
-              displayName: user.displayName || 'ผู้ใช้งานเทคโนโลยีการศึกษา',
-              photoURL: user.photoURL || '',
-              phoneNumber: user.phoneNumber || '',
-              studentOrStaffId: '',
-              department: 'ภาควิชาเทคโนโลยีการศึกษา',
-              role: userIsAdmin ? 'admin' : 'user',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-            await setDoc(userDocRef, newProfile);
-            setProfile(newProfile);
+            // Document does not exist, create it
+            await setDoc(userDocRef, fallbackProfile);
+            setProfile(fallbackProfile);
           }
         } catch (err) {
-          console.error('Error fetching/creating profile:', err);
-          handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+          console.warn('Profile read/create notice, using auth profile:', err);
+          setProfile(fallbackProfile);
         }
       } else {
         setCurrentUser(null);
@@ -115,20 +130,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, [adminEmails]);
+  }, []);
 
   const signInWithGoogle = async () => {
     try {
+      setAuthError(null);
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error('Login error:', error);
+    } catch (error: any) {
+      console.error('Google Sign-in error:', error);
+      let message = 'เกิดข้อผิดพลาดในการลงชื่อเข้าใช้ด้วย Google';
+      if (error?.code === 'auth/popup-blocked') {
+        message = 'เบราว์เซอร์บล็อกหน้าต่างป็อปอัป (Popup Blocked) กรุณากดอนุญาตให้เปิดหน้าต่างป็อปอัปสำหรับเว็บไซต์นี้';
+      } else if (error?.code === 'auth/popup-closed-by-user') {
+        message = 'หน้าต่างลงชื่อเข้าใช้ถูกปิดก่อนทำรายการเสร็จสิ้น';
+      } else if (error?.code === 'auth/unauthorized-domain') {
+        message = 'โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Auth Console (กรุณาเพิ่มโดเมนใน Authorized Domains)';
+      } else if (error?.message) {
+        message = error.message;
+      }
+      setAuthError(message);
       throw error;
     }
   };
 
   const logOut = async () => {
     try {
+      setAuthError(null);
       await signOut(auth);
+      setCurrentUser(null);
+      setProfile(null);
+      setIsAdmin(false);
     } catch (error) {
       console.error('Logout error:', error);
       throw error;
@@ -146,7 +177,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await updateDoc(userDocRef, updatePayload);
       setProfile((prev) => (prev ? { ...prev, ...updatePayload } : null));
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${currentUser.uid}`);
+      console.error('Update profile error:', error);
+      // Still update local profile state
+      setProfile((prev) => (prev ? { ...prev, ...data } : null));
     }
   };
 
@@ -188,6 +221,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin,
         loading,
         adminEmails,
+        authError,
+        clearAuthError: () => setAuthError(null),
         signInWithGoogle,
         logOut,
         updateProfile,

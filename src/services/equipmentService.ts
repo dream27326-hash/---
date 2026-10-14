@@ -30,9 +30,8 @@ export const subscribeToEquipment = (
       onSuccess(list);
     },
     (error) => {
-      console.error('Subscribe equipment error:', error);
+      console.warn('Subscribe equipment notice:', error);
       onError?.(error);
-      handleFirestoreError(error, OperationType.LIST, EQUIPMENT_COLLECTION);
     }
   );
 };

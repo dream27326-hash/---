@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 function AppContent() {
-  const { currentUser, isAdmin, loading: authLoading } = useAuth();
+  const { currentUser, isAdmin, loading: authLoading, authError, clearAuthError } = useAuth();
 
   const [currentTab, setCurrentTab] = useState<'catalog' | 'my-bookings' | 'admin'>('catalog');
 
@@ -132,7 +132,22 @@ function AppContent() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-4">
+        {authError && (
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-sm text-rose-800 shadow-sm animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="font-bold">แจ้งเตือนการเข้าสู่ระบบ:</span>
+              <span>{authError}</span>
+            </div>
+            <button
+              onClick={clearAuthError}
+              className="p-1 text-rose-500 hover:text-rose-800 rounded-lg hover:bg-rose-100/60"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {currentTab === 'catalog' && (
           <EquipmentCatalog
             equipmentList={equipmentList}

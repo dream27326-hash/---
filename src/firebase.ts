@@ -1,13 +1,31 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+} from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth(app);
+
+// Enable local persistence so user session persists across reloads and tab navigations
+try {
+  setPersistence(auth, browserLocalPersistence).catch(() => {
+    setPersistence(auth, browserSessionPersistence).catch(() => {});
+  });
+} catch (e) {
+  console.warn('Persistence setup warning:', e);
+}
+
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+googleProvider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 export enum OperationType {
   CREATE = 'create',

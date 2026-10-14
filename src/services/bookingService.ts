@@ -6,7 +6,6 @@ import {
   updateDoc,
   query,
   where,
-  orderBy,
   runTransaction,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -20,10 +19,10 @@ export const subscribeToUserBookings = (
   onSuccess: (bookings: Booking[]) => void,
   onError?: (error: unknown) => void
 ) => {
+  // Query without orderBy to avoid needing a Firestore composite index, sort in-memory
   const q = query(
     collection(db, BOOKINGS_COLLECTION),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc')
+    where('userId', '==', userId)
   );
 
   return onSnapshot(
@@ -33,12 +32,13 @@ export const subscribeToUserBookings = (
       snapshot.forEach((docSnap) => {
         list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Booking, 'id'>) });
       });
+      // Sort newest first in memory
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       onSuccess(list);
     },
     (error) => {
-      console.error('Subscribe user bookings error:', error);
+      console.warn('Subscribe user bookings notice:', error);
       onError?.(error);
-      handleFirestoreError(error, OperationType.LIST, BOOKINGS_COLLECTION);
     }
   );
 };
@@ -47,7 +47,7 @@ export const subscribeToAllBookings = (
   onSuccess: (bookings: Booking[]) => void,
   onError?: (error: unknown) => void
 ) => {
-  const q = query(collection(db, BOOKINGS_COLLECTION), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, BOOKINGS_COLLECTION));
 
   return onSnapshot(
     q,
@@ -56,12 +56,12 @@ export const subscribeToAllBookings = (
       snapshot.forEach((docSnap) => {
         list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Booking, 'id'>) });
       });
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       onSuccess(list);
     },
     (error) => {
-      console.error('Subscribe all bookings error:', error);
+      console.warn('Subscribe all bookings notice:', error);
       onError?.(error);
-      handleFirestoreError(error, OperationType.LIST, BOOKINGS_COLLECTION);
     }
   );
 };
@@ -204,23 +204,13 @@ export const returnBookingRecord = async (
         const total = equipmentData.totalQuantity ?? 0;
         const currentAvailable = equipmentData.availableQuantity ?? 0;
 
-        // If returned in normal or damaged condition, return stock (damaged can be marked for maintenance)
         if (condition === 'lost') {
-          // Lost item: do not return to available quantity, reduce total quantity
           const newTotal = Math.max(0, total - quantity);
           transaction.update(equipmentRef, {
             totalQuantity: newTotal,
             updatedAt: now,
           });
-        } else if (condition === 'damaged') {
-          // Damaged item: return to available or set equipment note/status
-          const newAvailable = Math.min(total, currentAvailable + quantity);
-          transaction.update(equipmentRef, {
-            availableQuantity: newAvailable,
-            updatedAt: now,
-          });
         } else {
-          // Normal return
           const newAvailable = Math.min(total, currentAvailable + quantity);
           transaction.update(equipmentRef, {
             availableQuantity: newAvailable,

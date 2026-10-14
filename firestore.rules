@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.\\@]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'dream27326@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/admins/$(request.auth.token.email)))
+      );
+    }
+
+    // Validation for User profile
+    function isValidUser(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.email is string && data.email.size() <= 150
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 150))
+        && (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() <= 50))
+        && (!('studentOrStaffId' in data) || (data.studentOrStaffId is string && data.studentOrStaffId.size() <= 50))
+        && (!('department' in data) || (data.department is string && data.department.size() <= 150))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000))
+        && (!('role' in data) || data.role in ['admin', 'user']);
+    }
+
+    // Validation for Equipment item
+    function isValidEquipment(data) {
+      return data.code is string && data.code.size() <= 100
+        && data.name is string && data.name.size() <= 300
+        && data.category is string && data.category.size() <= 100
+        && data.totalQuantity is number && data.totalQuantity >= 0
+        && data.availableQuantity is number && data.availableQuantity >= 0
+        && data.status in ['available', 'maintenance', 'inactive']
+        && (!('description' in data) || (data.description is string && data.description.size() <= 5000))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 500000));
+    }
+
+    // Validation for Booking document
+    function isValidBooking(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.equipmentId is string && data.equipmentId.size() <= 128
+        && data.quantity is number && data.quantity > 0
+        && data.startDate is string && data.startDate.size() <= 50
+        && data.endDate is string && data.endDate.size() <= 50
+        && data.purpose is string && data.purpose.size() <= 2000
+        && data.status in ['pending', 'approved', 'returned', 'rejected', 'cancelled'];
+    }
+
+    // Connection test document
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // User profiles collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) && isValidUser(incoming()) && incoming().role == existing().role) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Admins registry collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Equipment inventory collection
+    match /equipment/{equipmentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Bookings collection
+    match /bookings/{bookingId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidBooking(incoming()) && incoming().userId == request.auth.uid && incoming().status == 'pending';
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && existing().userId == request.auth.uid
+        && existing().status == 'pending'
+        && incoming().status == 'cancelled'
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+      );
+      allow delete: if isAdmin();
+    }
+  }
+}

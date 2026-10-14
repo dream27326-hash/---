@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing identity and contact details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User UID" },
+        "email": { "type": "string", "format": "email", "description": "User Google email" },
+        "displayName": { "type": "string", "description": "Full name", "maxLength": 150 },
+        "photoURL": { "type": "string", "description": "Avatar URL", "maxLength": 500 },
+        "phoneNumber": { "type": "string", "description": "Contact phone number", "maxLength": 30 },
+        "studentOrStaffId": { "type": "string", "description": "Student or Staff ID", "maxLength": 50 },
+        "department": { "type": "string", "description": "Department or faculty affiliation", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "User authorization role" },
+        "createdAt": { "type": "string", "description": "Account creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Profile last update timestamp" }
+      },
+      "required": ["id", "email", "displayName", "role"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Trusted admin registry entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID" },
+        "email": { "type": "string", "format": "email", "description": "Authorized Admin Email" },
+        "addedBy": { "type": "string", "description": "Email of admin who granted role", "maxLength": 150 },
+        "createdAt": { "type": "string", "description": "Timestamp created" }
+      },
+      "required": ["id", "email"]
+    },
+    "Equipment": {
+      "title": "Equipment",
+      "description": "Educational technology equipment item in department inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Equipment ID" },
+        "code": { "type": "string", "description": "Asset code e.g. CAM-001", "maxLength": 50 },
+        "name": { "type": "string", "description": "Equipment Name", "maxLength": 200 },
+        "category": { "type": "string", "description": "Equipment Category", "maxLength": 100 },
+        "totalQuantity": { "type": "number", "description": "Total asset count in inventory" },
+        "availableQuantity": { "type": "number", "description": "Currently unborrowed asset count" },
+        "status": { "type": "string", "enum": ["available", "maintenance", "inactive"], "description": "Overall operational status" },
+        "imageUrl": { "type": "string", "description": "Equipment photo URL or storage URL" },
+        "description": { "type": "string", "description": "Equipment specifications and accessories included", "maxLength": 2000 },
+        "createdAt": { "type": "string", "description": "Record creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Record modification timestamp" }
+      },
+      "required": ["id", "code", "name", "category", "totalQuantity", "availableQuantity", "status"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Equipment borrowing and return reservation transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Booking document ID" },
+        "bookingCode": { "type": "string", "description": "Human-friendly booking reference code", "maxLength": 30 },
+        "userId": { "type": "string", "description": "Applicant user UID" },
+        "userName": { "type": "string", "description": "Applicant full name", "maxLength": 150 },
+        "userEmail": { "type": "string", "description": "Applicant email address", "maxLength": 150 },
+        "userPhone": { "type": "string", "description": "Applicant phone number", "maxLength": 50 },
+        "userStudentId": { "type": "string", "description": "Applicant student/staff ID", "maxLength": 50 },
+        "equipmentId": { "type": "string", "description": "ID of reserved equipment" },
+        "equipmentName": { "type": "string", "description": "Name of reserved equipment", "maxLength": 200 },
+        "equipmentCode": { "type": "string", "description": "Asset code of reserved equipment", "maxLength": 50 },
+        "quantity": { "type": "number", "description": "Count of items reserved" },
+        "startDate": { "type": "string", "description": "Borrowing start date (YYYY-MM-DD)", "maxLength": 30 },
+        "endDate": { "type": "string", "description": "Scheduled return date (YYYY-MM-DD)", "maxLength": 30 },
+        "purpose": { "type": "string", "description": "Educational purpose or course description", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "approved", "returned", "rejected", "cancelled"], "description": "Transaction lifecycle state" },
+        "rejectionReason": { "type": "string", "description": "Admin note if rejected", "maxLength": 500 },
+        "returnCondition": { "type": "string", "enum": ["normal", "damaged", "lost"], "description": "Condition of hardware when returned" },
+        "returnNotes": { "type": "string", "description": "Notes on item condition or missing accessories", "maxLength": 1000 },
+        "approvedBy": { "type": "string", "description": "Admin email who verified pickup", "maxLength": 150 },
+        "approvedAt": { "type": "string", "description": "Pickup / approval timestamp" },
+        "returnedAt": { "type": "string", "description": "Return check-in timestamp" },
+        "createdAt": { "type": "string", "description": "Reservation creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Status change timestamp" }
+      },
+      "required": ["id", "userId", "equipmentId", "quantity", "startDate", "endDate", "purpose", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile store"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "List of authorized administrator email accounts"
+    },
+    "/equipment/{equipmentId}": {
+      "schema": "Equipment",
+      "description": "Master list of department equipment inventory"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Borrowing request and return history tracking"
+    }
+  }
+}
